@@ -305,6 +305,54 @@ def calc_ISRF(model,wav=None, gnorm=None):
     
     return wav, Inu_isrf
 
+def calc_ISRF_phot(model,wav=None, gnorm=None):
+    """ using template ISRF measurement, normalized field by number of G0 
+    
+    Parameters:
+    ----------
+    model: model_ object class 
+    
+    wav: wavelength in microns if None, wavelength is read in from the model's outdir
+            otherwise, provided wavelengths are used for calculation
+            
+    gnorm: scaling for isrf energy by G0, if None, input model G0 is used
+    
+    Returns: wav, fnu of isrf in ergs/cms2/s/Hz/str
+    """
+    
+    from scipy.interpolate import interp1d
+    
+    if wav is None:
+        wav, freq = read_wavelength(model.outdir+'wavelength_micron.inp')
+    else:
+        freq = c / wav * 1e4
+        
+    if gnorm is None:
+        gnorm = model.rad['G0']
+    
+    templates_dir = model.models_dir+'templates/'
+    fname= templates_dir+'ISRF.csv'
+    
+    ISRF = np.loadtxt(fname,skiprows=1,delimiter=',')
+    lami = ISRF[:,0] #micron
+    flam = ISRF[:,1]/(4*pi) #ergs/cm2/s/micron/str
+    
+    fnu_ = flam*(lami*(lami*1e-4))/c #conversion to ergs/cms2/s/Hz/str
+    
+    Inu = interp1d(lami, fnu_,fill_value='extrapolate')
+    Inu_isrf = np.clip(Inu(wav),a_min=np.amin(fnu_)*1e-2,a_max=None)
+    
+    isrf_index = (wav > 0.0912) & (wav < 2.4) # wavelengths over which G0 is measured
+
+    E_phot = h * c / wav
+
+    Ftot_phot = np.trapz(Inu_isrf[isrf_index][::-1],x=freq[isrf_index][::-1]) /  E_phot
+    
+    norm_phot = gnorm*G0/Ftot_phot
+    Inu_isrf *= norm_phot
+    
+    return wav, Inu_isrf
+
 def model_viscous_dissipation(model,accrate = None):
     """ calculates the viscous dissipation due to disk accretion in the midplane
     Parameters:
